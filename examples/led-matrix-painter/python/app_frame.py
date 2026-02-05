@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import numpy as np
 import re
 import json
 from arduino.app_utils import Frame

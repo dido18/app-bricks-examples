@@ -3,9 +3,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 // Example sketch using Arduino_LED_Matrix and RouterBridge. This sketch
-// exposes two providers:
+// exposes four providers:
 //  - "draw" which accepts a std::vector<uint8_t> (by-value) and calls matrix.draw()
-//  - "play_animation" which accepts a byte array representing multiple frames
+//  - "load_frame" which loads frame data into animation buffer
+//  - "play_animation" which starts playback of loaded animation frames
+//  - "stop_animation" which halts any running animation
 #include <Arduino_RouterBridge.h>
 #include <Arduino_LED_Matrix.h>
 #include <vector>
@@ -13,12 +15,32 @@
 Arduino_LED_Matrix matrix;
 
 // Animation playback state (cooperative, interruptible by `stop_animation`)
-static const int MAX_FRAMES = 50;
+static const int MAX_FRAMES = 300;
 static uint32_t animation_buf[MAX_FRAMES][5]; // 4 words + duration
 static int animation_frame_count = 0;
 static volatile bool animation_running = false;
 static volatile int animation_current_frame = 0;
 static unsigned long animation_next_time = 0;
+
+void setup() {
+  matrix.begin();
+  Serial.begin(115200);
+  // configure grayscale bits to 3 so the display accepts 0..7 brightness
+  // The backend will send quantized values in 0..(2^3-1) == 0..7.
+  matrix.setGrayscaleBits(3);
+  matrix.clear();
+
+  Bridge.begin();
+  Bridge.provide("draw", draw);
+  Bridge.provide("load_frame", load_frame);
+  Bridge.provide("play_animation", play_animation);
+  Bridge.provide("stop_animation", stop_animation);
+}
+
+void loop() {
+  // Keep loop fast and let animation_tick handle playback timing
+  animation_tick();
+}
 
 void draw(std::vector<uint8_t> frame) {
   if (frame.empty()) {
@@ -37,7 +59,7 @@ void load_frame(std::array<uint32_t,5> animation_bytes){
     return;
   }
 
-  // Maximum 50 frames to avoid stack overflow
+  // Limit frames to MAX_FRAMES to avoid buffer overflow
   if (animation_frame_count >= MAX_FRAMES) {
     Serial.print("[sketch] Too many frames, truncating to ");
     Serial.println(MAX_FRAMES);
@@ -108,25 +130,4 @@ void animation_tick() {
       animation_current_frame = 0;
       Serial.println("[sketch] Animation finished");
   }
-}
-
-void setup() {
-  matrix.begin();
-  Serial.begin(115200);
-  // configure grayscale bits to 3 so the display accepts 0..7 brightness
-  // The backend will send quantized values in 0..(2^3-1) == 0..7.
-  matrix.setGrayscaleBits(3);
-  matrix.clear();
-
-  Bridge.begin();
-  Bridge.provide("draw", draw);
-  Bridge.provide("load_frame", load_frame);
-  Bridge.provide("play_animation", play_animation);
-  Bridge.provide("stop_animation", stop_animation);
-}
-
-void loop() {
-  // Keep loop fast and let animation_tick handle playback timing
-  animation_tick();
-  delay(10);
 }
